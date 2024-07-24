@@ -1,0 +1,421 @@
+<html><head><base href="https://dummypage.example/tattoo-stencil-processor/%20%20coloca%20estos%20parametros%20por%20defecto">
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f0f0f0;
+  margin: 0;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.container {
+  background-color: white;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  max-width: 800px;
+  width: 100%;
+}
+
+h1 {
+  color: #333;
+  text-align: center;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  color: #555;
+}
+
+input[type="file"],
+input[type="range"] {
+  width: 100%;
+}
+
+.canvas-container {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  margin-top: 20px;
+  overflow: hidden;
+}
+
+canvas {
+  border: 1px solid #ddd;
+}
+
+.file-upload {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.file-upload:hover {
+  background-color: #45a049;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+.zoom-controls {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.zoom-controls button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  margin: 0 5px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.zoom-controls button:hover {
+  background-color: #45a049;
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@17.0.2/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@17.0.2/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const AdvancedStencilProcessor = () => {
+  const [image, setImage] = React.useState(null);
+  const [darkPatternThreshold, setDarkPatternThreshold] = React.useState(0.27);
+  const [midPatternThreshold, setMidPatternThreshold] = React.useState(0.43);
+  const [lightPatternThreshold, setLightPatternThreshold] = React.useState(0.52);
+  const [darkSpacing, setDarkSpacing] = React.useState(4);
+  const [midSpacing, setMidSpacing] = React.useState(5);
+  const [lightSpacing, setLightSpacing] = React.useState(9);
+  const [edgeThreshold, setEdgeThreshold] = React.useState(68);
+  const [lineWeight, setLineWeight] = React.useState(2);
+  const [opacity, setOpacity] = React.useState(0.02);
+  const [lineDrawingIntensity, setLineDrawingIntensity] = React.useState(5);
+  const [lineDrawingDetail, setLineDrawingDetail] = React.useState(0);
+  const [zoom, setZoom] = React.useState(1);
+
+  const canvasRef = React.useRef(null);
+  const originalCanvasRef = React.useRef(null);
+  const imageRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (image) {
+      processImage();
+    }
+  }, [image, darkPatternThreshold, midPatternThreshold, lightPatternThreshold, darkSpacing, midSpacing, lightSpacing, edgeThreshold, lineWeight, opacity, lineDrawingIntensity, lineDrawingDetail, zoom]);
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        imageRef.current = img;
+        setImage(img);
+      };
+      img.src = e.target.result;
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const processImage = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const originalCanvas = originalCanvasRef.current;
+    const originalCtx = originalCanvas.getContext('2d');
+    const img = imageRef.current;
+
+    canvas.width = img.width * zoom;
+    canvas.height = img.height * zoom;
+    originalCanvas.width = img.width;
+    originalCanvas.height = img.height;
+
+    // Draw original image
+    originalCtx.drawImage(img, 0, 0);
+    
+    // Clear the main canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (opacity < 1) {
+      // Process stencil
+      const imageData = originalCtx.getImageData(0, 0, originalCanvas.width, originalCanvas.height);
+      const data = imageData.data;
+
+      // Create a separate canvas for edge detection
+      const edgeCanvas = document.createElement('canvas');
+      edgeCanvas.width = originalCanvas.width;
+      edgeCanvas.height = originalCanvas.height;
+      const edgeCtx = edgeCanvas.getContext('2d');
+      edgeCtx.drawImage(img, 0, 0);
+      const edgeData = edgeCtx.getImageData(0, 0, originalCanvas.width, originalCanvas.height);
+
+      // Perform edge detection
+      const sobelData = applySobelFilter(edgeData);
+
+      ctx.fillStyle = 'black';
+      ctx.scale(zoom, zoom);
+
+      for (let y = 0; y < originalCanvas.height; y++) {
+        for (let x = 0; x < originalCanvas.width; x++) {
+          const i = (y * originalCanvas.width + x) * 4;
+          const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          const normalizedBrightness = brightness / 255;
+          const edgeIntensity = sobelData[y * originalCanvas.width + x];
+          
+          // Apply patterns based on thresholds
+          if (normalizedBrightness < darkPatternThreshold) {
+            // Draw cross-hatch for dark areas
+            if (y % darkSpacing === 0) {
+              ctx.fillRect(x, y, 1, 1);
+            }
+            if (x % darkSpacing === 0) {
+              ctx.fillRect(x, y, 1, 1);
+            }
+          } else if (normalizedBrightness < midPatternThreshold) {
+            // Draw single-direction lines for mid-tones
+            if (y % midSpacing === 0) {
+              ctx.fillRect(x, y, 1, 1);
+            }
+          } else if (normalizedBrightness < lightPatternThreshold) {
+            // Draw diagonal lines for light shadows
+            if ((x + y) % lightSpacing === 0) {
+              ctx.fillRect(x, y, 1, 1);
+            }
+          }
+          // Very light areas are left clear (no lines)
+
+          // Apply line drawing effect
+          if (edgeIntensity > edgeThreshold) {
+            const lineIntensity = Math.min(1, edgeIntensity / lineDrawingIntensity);
+            if (Math.random() < lineIntensity) {
+              ctx.fillRect(x, y, lineWeight, lineWeight);
+            }
+          }
+
+          // Apply additional line drawing detail
+          if (Math.random() < lineDrawingDetail / 100) {
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+    }
+
+    // Apply opacity
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(img, 0, 0);
+
+    // Reset global alpha and scale
+    ctx.globalAlpha = 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  };
+
+  const applySobelFilter = (imageData) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+    const outputData = new Uint8ClampedArray(width * height);
+
+    const sobelX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+    const sobelY = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        let sumX = 0;
+        let sumY = 0;
+
+        for (let i = -1; i <= 1; i++) {
+          for (let j = -1; j <= 1; j++) {
+            const idx = ((y + i) * width + (x + j)) * 4;
+            const gray = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+            sumX += gray * sobelX[(i + 1) * 3 + (j + 1)];
+            sumY += gray * sobelY[(i + 1) * 3 + (j + 1)];
+          }
+        }
+
+        const magnitude = Math.sqrt(sumX * sumX + sumY * sumY);
+        outputData[y * width + x] = magnitude;
+      }
+    }
+
+    return outputData;
+  };
+
+  const handleZoomIn = () => {
+    setZoom(prevZoom => Math.min(prevZoom + 0.1, 3));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prevZoom => Math.max(prevZoom - 0.1, 0.1));
+  };
+
+  const handleResetZoom = () => {
+    setZoom(1);
+  };
+
+  return (
+    <div className="container">
+      <h1>Advanced Stencil Processor</h1>
+      <div className="controls">
+        <div>
+          <label htmlFor="image-upload" className="file-upload">Upload Image</label>
+          <input id="image-upload" type="file" onChange={handleImageUpload} accept="image/*" />
+        </div>
+        <div>
+          <label>Dark Pattern Threshold: {darkPatternThreshold.toFixed(2)}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01"
+            value={darkPatternThreshold} 
+            onChange={(e) => setDarkPatternThreshold(parseFloat(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Mid Pattern Threshold: {midPatternThreshold.toFixed(2)}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01"
+            value={midPatternThreshold} 
+            onChange={(e) => setMidPatternThreshold(parseFloat(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Light Pattern Threshold: {lightPatternThreshold.toFixed(2)}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01"
+            value={lightPatternThreshold} 
+            onChange={(e) => setLightPatternThreshold(parseFloat(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Dark Line Spacing: {darkSpacing}</label>
+          <input 
+            type="range" 
+            min="2" 
+            max="10" 
+            value={darkSpacing} 
+            onChange={(e) => setDarkSpacing(parseInt(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Mid Line Spacing: {midSpacing}</label>
+          <input 
+            type="range" 
+            min="2" 
+            max="10" 
+            value={midSpacing} 
+            onChange={(e) => setMidSpacing(parseInt(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Light Line Spacing: {lightSpacing}</label>
+          <input 
+            type="range" 
+            min="2" 
+            max="10" 
+            value={lightSpacing} 
+            onChange={(e) => setLightSpacing(parseInt(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Edge Threshold: {edgeThreshold}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="255" 
+            value={edgeThreshold} 
+            onChange={(e) => setEdgeThreshold(parseInt(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Line Weight: {lineWeight}</label>
+          <input 
+            type="range" 
+            min="1" 
+            max="3" 
+            value={lineWeight} 
+            onChange={(e) => setLineWeight(parseInt(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Opacity: {opacity.toFixed(2)}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01"
+            value={opacity} 
+            onChange={(e) => setOpacity(parseFloat(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Line Drawing Intensity: {lineDrawingIntensity}</label>
+          <input 
+            type="range" 
+            min="1" 
+            max="100" 
+            value={lineDrawingIntensity} 
+            onChange={(e) => setLineDrawingIntensity(parseInt(e.target.value))} 
+          />
+        </div>
+        <div>
+          <label>Line Drawing Detail: {lineDrawingDetail}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="20" 
+            value={lineDrawingDetail} 
+            onChange={(e) => setLineDrawingDetail(parseInt(e.target.value))} 
+          />
+        </div>
+      </div>
+      <div className="canvas-container">
+        <canvas ref={canvasRef}></canvas>
+        <canvas ref={originalCanvasRef} style={{display: 'none'}}></canvas>
+      </div>
+      <div className="zoom-controls">
+        <button onClick={handleZoomOut}>-</button>
+        <span>Zoom: {zoom.toFixed(1)}x</span>
+        <button onClick={handleZoomIn}>+</button>
+        <button onClick={handleResetZoom}>Reset</button>
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.render(<AdvancedStencilProcessor />, document.getElementById('root'));
+</script>
+</body>
+</html>
